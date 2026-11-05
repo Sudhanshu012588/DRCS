@@ -8,6 +8,7 @@ from Controllers.Outer_Coordinates import (
 )
 from Types.BasePlan import BasePlan
 from Utils.rate_limiter import check_rate_limit
+from Types.User import User
 load_dotenv()
 
 app = FastAPI()
@@ -46,3 +47,10 @@ async def generate_floor_plan(plan: BasePlan):
         plan,
         GEMINI_API_KEY
     )
+
+@app.post("/api/auth/signup")
+async def signup(user:User):
+    return {
+        "Status":"Success",
+        "User":user
+    }

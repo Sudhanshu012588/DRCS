@@ -23,10 +23,10 @@ export const Navbar: React.FC = () => {
         </div>
 
         <button
-          onClick={() => navigate('/planner')}
+          onClick={() => navigate('/Auth')}
           className="px-4 py-2 bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-semibold rounded text-xs flex items-center gap-1.5 transition-all shadow-lg shadow-cyan-500/10"
         >
-          Launch Planner <ArrowRight size={14} />
+          Auth <ArrowRight size={14} />
         </button>
       </div>
     </nav>
