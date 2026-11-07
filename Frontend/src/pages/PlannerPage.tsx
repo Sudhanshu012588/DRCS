@@ -1,34 +1,41 @@
-import React, { useState, useMemo } from 'react';
-import type { Direction, Point, PlotPreset, UnitSystem } from '../types';
+import React, { useState, useMemo, useEffect } from 'react';
+import { useParams } from 'react-router-dom';
+import type { Point, UnitSystem } from '../types';
 import { convertToFeet, convertFromFeet } from '../types';
 import { MetricsPanel } from '../components/MetricsPanel';
 import { DrawingControls } from '../components/DrawingControls';
 import { PlotCanvas } from '../components/PlotCanvas';
 import { NodeTable } from '../components/NodeTable';
-import { PresetToolbar } from '../components/PresetToolbar';
 import { BhkSelector } from '../components/BhkSelector';
 import { FloorPlanViewer } from '../components/FloorPlanViewer';
 import { Toast, type ToastMessage } from '../components/Toast';
 import { sendOuterCoordinates, type BasePlanPayload } from '../services/api';
 import type { FloorPlanResponse } from '../types/FloorPlan';
-import { Send, Loader2, User } from 'lucide-react';
+import { Send, Loader2, Layers } from 'lucide-react';
 
 export const PlannerPage: React.FC = () => {
+  const { userId: urlUserId } = useParams<{ userId?: string }>();
+
   const [unit, setUnit] = useState<UnitSystem>('ft');
   const [gridDomainInput, setGridDomainInput] = useState<string>('60');
-  const [nodes, setNodes] = useState<Point[]>([{ x: 0, y: 0 }]);
-  const [selectedDir, setSelectedDir] = useState<Direction>('RIGHT');
-  const [stepLengthInput, setStepLengthInput] = useState<string>('30');
+  
+  const [history, setHistory] = useState<Point[][]>([[{ x: 0, y: 0 }]]);
+  const [historyIndex, setHistoryIndex] = useState<number>(0);
   const [isClosed, setIsClosed] = useState<boolean>(false);
 
-  // User & BHK Input state
-  const [userId, setUserId] = useState<string>('usr_101');
+  const [userId, setUserId] = useState<string>(urlUserId || 'usr_101');
   const [bhk, setBhk] = useState<number>(3);
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [toast, setToast] = useState<ToastMessage | null>(null);
-
-  // State to store backend generated floor plan
   const [floorPlanData, setFloorPlanData] = useState<FloorPlanResponse | null>(null);
+
+  useEffect(() => {
+    if (urlUserId) {
+      setUserId(urlUserId);
+    }
+  }, [urlUserId]);
+
+  const nodes = history[historyIndex] || [{ x: 0, y: 0 }];
 
   const gridDomainInUnit = useMemo(() => {
     const val = parseFloat(gridDomainInput);
@@ -67,75 +74,46 @@ export const PlannerPage: React.FC = () => {
     return Math.round(total);
   }, [nodes]);
 
-  const handleAddSegment = () => {
-    if (isClosed || !stepLengthInput) return;
-    const val = parseFloat(stepLengthInput);
-    if (isNaN(val) || val <= 0) return;
-
-    const stepInFt = convertToFeet(val, unit);
-    const last = nodes[nodes.length - 1];
-    let nextX = last.x;
-    let nextY = last.y;
-
-    if (selectedDir === 'UP') nextY += stepInFt;
-    if (selectedDir === 'DOWN') nextY -= stepInFt;
-    if (selectedDir === 'RIGHT') nextX += stepInFt;
-    if (selectedDir === 'LEFT') nextX -= stepInFt;
-
-    nextX = Math.max(0, Math.min(gridDomainFt, nextX));
-    nextY = Math.max(0, Math.min(gridDomainFt, nextY));
-
-    if (nodes.length > 2 && nextX === 0 && nextY === 0) {
-      setIsClosed(true);
-    }
-
-    setNodes(prev => [...prev, { x: nextX, y: nextY }]);
+  const pushNewNodes = (newNodes: Point[], closed = false) => {
+    const newHistory = history.slice(0, historyIndex + 1);
+    newHistory.push(newNodes);
+    setHistory(newHistory);
+    setHistoryIndex(newHistory.length - 1);
+    if (closed) setIsClosed(true);
   };
 
   const handleCanvasClickNode = (p: Point) => {
     if (isClosed) return;
     if (nodes.length > 2 && p.x === 0 && p.y === 0) {
-      setNodes(prev => [...prev, { x: 0, y: 0 }]);
-      setIsClosed(true);
+      pushNewNodes([...nodes, { x: 0, y: 0 }], true);
       return;
     }
-    setNodes(prev => [...prev, p]);
+    pushNewNodes([...nodes, p]);
   };
 
   const handleCloseLoop = () => {
-    if (nodes.length < 3) return;
-    setNodes(prev => [...prev, { x: 0, y: 0 }]);
-    setIsClosed(true);
+    if (nodes.length < 3 || isClosed) return;
+    pushNewNodes([...nodes, { x: 0, y: 0 }], true);
   };
 
   const handleUndo = () => {
-    if (nodes.length <= 1) return;
-    setNodes(prev => prev.slice(0, -1));
-    setIsClosed(false);
+    if (historyIndex > 0) {
+      setHistoryIndex(historyIndex - 1);
+      setIsClosed(false);
+    }
+  };
+
+  const handleRedo = () => {
+    if (historyIndex < history.length - 1) {
+      setHistoryIndex(historyIndex + 1);
+    }
   };
 
   const handleClear = () => {
-    setNodes([{ x: 0, y: 0 }]);
+    setHistory([[{ x: 0, y: 0 }]]);
+    setHistoryIndex(0);
     setIsClosed(false);
     setFloorPlanData(null);
-  };
-
-  const handleLoadPreset = (preset: PlotPreset) => {
-    const domainInActiveUnit = convertFromFeet(preset.gridSize, unit);
-    setGridDomainInput(Math.round(domainInActiveUnit).toString());
-    setNodes(preset.nodes);
-    setIsClosed(true);
-    setFloorPlanData(null);
-  };
-
-  const handleExportJSON = () => {
-    const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify({ unit, gridDomainInUnit, nodes, areaSqFt, perimeterFt }, null, 2));
-    const downloadAnchor = document.createElement('a');
-    downloadAnchor.setAttribute("href", dataStr);
-    downloadAnchor.setAttribute("download", "plot_boundary_model.json");
-    document.body.appendChild(downloadAnchor);
-    downloadAnchor.click();
-    downloadAnchor.remove();
   };
 
   const handleSendToBackend = async () => {
@@ -155,15 +133,13 @@ export const PlannerPage: React.FC = () => {
       };
 
       const res: FloorPlanResponse = await sendOuterCoordinates(payload);
-
-      // Save backend response to render FloorPlanViewer
       setFloorPlanData(res);
 
       setToast({
         id: Date.now().toString(),
         type: 'success',
         title: 'Floor Plan Generated',
-        detail: `Floor plan for ${res.userId || userId} successfully created.`
+        detail: `Floor plan generated successfully.`
       });
     } catch (err: any) {
       setToast({
@@ -178,87 +154,34 @@ export const PlannerPage: React.FC = () => {
   };
 
   return (
-    <div className="p-4 max-w-7xl mx-auto relative">
+    <div className="h-[calc(100vh-4rem)] bg-slate-50 text-slate-900 p-3 font-sans overflow-hidden">
       <Toast toast={toast} onClose={() => setToast(null)} />
 
-      <div className="flex items-center justify-between pb-4 mb-4 border-b border-slate-800">
-        <div>
-          <h1 className="text-lg font-bold text-slate-100 tracking-tight flex items-center gap-2">
-            <span className="bg-cyan-500 text-slate-950 text-xs px-2 py-0.5 rounded font-mono font-black">BIM</span>
-            Parametric Plot Boundary Generator
-          </h1>
-          <p className="text-xs text-slate-400">Step 1: Define plot coordinate boundaries and BHK requirements.</p>
-        </div>
-      </div>
+      {/* 3-Column Balanced Workspace Grid */}
+      <div className="h-full grid grid-cols-1 lg:grid-cols-12 gap-3 min-h-0">
+        
+        {/* LEFT COLUMN: Metrics, Units, Grid Extent, Node Schedule */}
+        <div className="lg:col-span-3 flex flex-col gap-2.5 h-full min-h-0">
+          <MetricsPanel
+            areaSqFt={areaSqFt}
+            perimeterFt={perimeterFt}
+            isClosed={isClosed}
+            nodeCount={nodes.length}
+            unit={unit}
+          />
 
-      <PresetToolbar
-        onLoadPreset={handleLoadPreset}
-        onExportJSON={handleExportJSON}
-        isClosed={isClosed}
-      />
+          <DrawingControls
+            gridDomainInput={gridDomainInput}
+            setGridDomainInput={setGridDomainInput}
+            unit={unit}
+            setUnit={handleUnitChange}
+          />
 
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        <div className="lg:col-span-5 flex flex-col justify-between">
-          <div>
-            <MetricsPanel
-              areaSqFt={areaSqFt}
-              perimeterFt={perimeterFt}
-              isClosed={isClosed}
-              nodeCount={nodes.length}
-              unit={unit}
-            />
-
-            <div className="bg-slate-900 border border-slate-800 p-4 rounded-lg mb-4 space-y-4">
-              <div>
-                <label className="text-xs font-semibold text-slate-300 flex items-center gap-1.5 mb-1.5">
-                  <User size={14} className="text-cyan-400" /> User Identifier
-                </label>
-                <input
-                  type="text"
-                  value={userId}
-                  onChange={(e) => setUserId(e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-1.5 text-xs font-mono text-slate-200 focus:outline-none focus:border-cyan-400"
-                  placeholder="Enter user ID"
-                />
-              </div>
-
-              <BhkSelector bhk={bhk} setBhk={setBhk} />
-
-              <button
-                onClick={handleSendToBackend}
-                disabled={!isClosed || isSubmitting}
-                className="w-full py-2.5 bg-cyan-500 hover:bg-cyan-400 disabled:opacity-40 text-slate-950 font-bold rounded text-xs flex items-center justify-center gap-1.5 transition-all shadow-lg shadow-cyan-500/10"
-              >
-                {isSubmitting ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}
-                Generate Floor Plan via Backend
-              </button>
-            </div>
-
-            <DrawingControls
-              gridDomainInput={gridDomainInput}
-              setGridDomainInput={setGridDomainInput}
-              selectedDir={selectedDir}
-              setSelectedDir={setSelectedDir}
-              stepLengthInput={stepLengthInput}
-              setStepLengthInput={setStepLengthInput}
-              unit={unit}
-              setUnit={handleUnitChange}
-              onAddSegment={handleAddSegment}
-              onCloseLoop={handleCloseLoop}
-              onUndo={handleUndo}
-              onClear={handleClear}
-              isClosed={isClosed}
-              nodesLength={nodes.length}
-            />
-          </div>
-
-          <div className="mt-4">
-            <NodeTable nodes={nodes} unit={unit} />
-          </div>
+          <NodeTable nodes={nodes} unit={unit} />
         </div>
 
-        {/* Right Viewport Panel: Displays Plot Boundary or Generated Floor Plan */}
-        <div className="lg:col-span-7 space-y-6">
+        {/* CENTER COLUMN: Hero AutoCAD CAD Viewport */}
+        <div className="lg:col-span-6 flex flex-col h-full min-h-0">
           <PlotCanvas
             gridDomainFt={gridDomainFt}
             gridDomainInUnit={gridDomainInUnit}
@@ -266,11 +189,46 @@ export const PlannerPage: React.FC = () => {
             onCanvasClickNode={handleCanvasClickNode}
             isClosed={isClosed}
             unit={unit}
+            onUndo={handleUndo}
+            onRedo={handleRedo}
+            canUndo={historyIndex > 0}
+            canRedo={historyIndex < history.length - 1}
+            onCloseLoop={handleCloseLoop}
+            onClear={handleClear}
           />
-
-          {/* Render FloorPlanViewer when data is returned from backend */}
-          {floorPlanData && <FloorPlanViewer data={floorPlanData} />}
         </div>
+
+        {/* RIGHT COLUMN: Room Configuration (BHK) & Generated Floor Plan Viewer */}
+        <div className="lg:col-span-3 flex flex-col gap-3 h-full min-h-0 overflow-y-auto pr-0.5">
+          <div className="bg-white border border-slate-200/80 p-3.5 rounded-2xl shadow-sm space-y-4 flex-shrink-0">
+            <BhkSelector bhk={bhk} setBhk={setBhk} />
+
+            <button
+              onClick={handleSendToBackend}
+              disabled={!isClosed || isSubmitting}
+              className="w-full py-3 bg-blue-600 hover:bg-blue-700 disabled:opacity-40 text-white font-bold rounded-xl text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition-all shadow-sm"
+            >
+              {isSubmitting ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />}
+              Generate Floor Plan
+            </button>
+          </div>
+
+          {/* Generated Floor Plan Display */}
+          {floorPlanData ? (
+            <div className="flex-1 min-h-0">
+              <FloorPlanViewer data={floorPlanData} />
+            </div>
+          ) : (
+            <div className="flex-1 border-2 border-dashed border-slate-200 rounded-2xl flex flex-col items-center justify-center p-6 text-center text-slate-400 bg-white/50">
+              <Layers size={28} className="mb-2 text-slate-300" />
+              <span className="text-xs font-semibold text-slate-600">No Floor Plan Generated</span>
+              <p className="text-[10px] text-slate-400 mt-1 max-w-[180px]">
+                Close your boundary on the CAD canvas and click Generate Floor Plan.
+              </p>
+            </div>
+          )}
+        </div>
+
       </div>
     </div>
   );

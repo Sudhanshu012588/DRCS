@@ -3,41 +3,44 @@ import { Home } from 'lucide-react';
 
 interface BhkSelectorProps {
   bhk: number;
-  setBhk: (value: number) => void;
-  disabled?: boolean;
+  setBhk: (bhk: number) => void;
 }
 
 const BHK_OPTIONS = [
-  { value: 1, label: '1 BHK', desc: 'Compact' },
-  { value: 2, label: '2 BHK', desc: 'Standard' },
-  { value: 3, label: '3 BHK', desc: 'Family' },
-  { value: 4, label: '4 BHK', desc: 'Villa' },
-  { value: 5, label: '5 BHK', desc: 'Luxury' }
+  { val: 1, label: '1 BHK', desc: 'Compact' },
+  { val: 2, label: '2 BHK', desc: 'Standard' },
+  { val: 3, label: '3 BHK', desc: 'Family' },
+  { val: 4, label: '4 BHK', desc: 'Villa' },
+  { val: 5, label: '5 BHK', desc: 'Luxury' }
 ];
 
-export const BhkSelector: React.FC<BhkSelectorProps> = ({ bhk, setBhk, disabled }) => {
+export const BhkSelector: React.FC<BhkSelectorProps> = ({ bhk, setBhk }) => {
   return (
-    <div className="space-y-2">
-      <label className="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
-        <Home size={14} className="text-cyan-400" /> Select Room Configuration (BHK)
+    <div>
+      <label className="text-xs font-bold text-slate-800 flex items-center gap-1.5 mb-2.5">
+        <Home size={14} className="text-blue-600" /> Select Room Configuration (BHK)
       </label>
-      <div className="grid grid-cols-5 gap-1.5">
-        {BHK_OPTIONS.map((opt) => (
-          <button
-            key={opt.value}
-            type="button"
-            disabled={disabled}
-            onClick={() => setBhk(opt.value)}
-            className={`py-2 px-1 rounded border flex flex-col items-center justify-center transition-all ${
-              bhk === opt.value
-                ? 'bg-cyan-500/20 border-cyan-400 text-cyan-300 font-bold shadow-lg shadow-cyan-500/10'
-                : 'bg-slate-950 border-slate-800 text-slate-400 hover:border-slate-700'
-            }`}
-          >
-            <span className="text-xs font-mono">{opt.label}</span>
-            <span className="text-[9px] text-slate-500 font-normal">{opt.desc}</span>
-          </button>
-        ))}
+      <div className="flex flex-col gap-1.5">
+        {BHK_OPTIONS.map((opt) => {
+          const isSelected = bhk === opt.val;
+          return (
+            <button
+              key={opt.val}
+              type="button"
+              onClick={() => setBhk(opt.val)}
+              className={`py-2 px-3 rounded-xl flex items-center justify-between transition-all ${
+                isSelected
+                  ? 'bg-blue-600 text-white font-bold shadow-md shadow-blue-500/20 ring-2 ring-blue-500'
+                  : 'bg-slate-900 hover:bg-slate-800 text-slate-200 border border-slate-700 font-semibold'
+              }`}
+            >
+              <span className="text-xs font-mono">{opt.label}</span>
+              <span className={`text-[10px] ${isSelected ? 'text-blue-100 font-medium' : 'text-slate-400'}`}>
+                {opt.desc}
+              </span>
+            </button>
+          );
+        })}
       </div>
     </div>
   );
